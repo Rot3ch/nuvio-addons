@@ -1,0 +1,19 @@
+{
+  "name": "nuvio-filelist-addon",
+  "version": "1.0.0",
+  "description": "Filelist + TorBox Addon for Nuvio",
+  "main": "addon.js",
+  "scripts": {
+    "start": "node addon.js"
+  },
+  "dependencies": {
+    "axios": "^1.21.0",
+    "cheerio": "^1.2.0",
+    "express": "^5.3.0",
+    "form-data": "^4.0.6",
+    "node-html-parser": "^9.0.6",
+    "stremio-addon-sdk": "^1.6.10"
+  },
+  "license": "ISC",
+  "type": "commonjs"
+}
