@@ -37,15 +37,20 @@ function detectLanguage(title) {
     if (!title) return "🇬🇧 [ENG]";
     const t = title.toUpperCase();
 
+    // Explicit Dual or Multi tags
     if (/\b(DUAL|HUN\.ENG|ENG\.HUN)\b/i.test(t) || (/\bHUN\b/i.test(t) && /\bENG\b/i.test(t))) {
         return "🇭🇺+🇬🇧 [DUAL]";
     }
     if (/\bMULTI\b/i.test(t)) {
         return "🌐 [MULTi]";
     }
+
+    // Standard Hungarian HD/WEB releases (almost always contain original English too)
+    const isHDorWEB = /\b(WEB|WEBRIP|WEB-DL|BLURAY|BDRIP|HD|1080P|720P|2160P|4K|ATMOS|DDP)\b/i.test(t);
     if (/\b(HUN|HUNGARIAN|MAGYAR|HU)\b/i.test(t)) {
-        return "🇭🇺 [HUN]";
+        return isHDorWEB ? "🇭🇺+🇬🇧 [HUN + ENG]" : "🇭🇺 [HUN]";
     }
+
     if (/\b(ENG|ENGLISH|EN)\b/i.test(t)) {
         return "🇬🇧 [ENG]";
     }
