@@ -37,28 +37,24 @@ function detectLanguage(title) {
     if (!title) return "🎬 [Original / Native]";
     const t = title.toUpperCase();
 
-    // Explicit Dual Audio (tagged with DUAL or both HUN and ENG)
     if (/\b(DUAL|HUN\.ENG|ENG\.HUN|HUN-ENG)\b/i.test(t) || (/\bHUN\b/i.test(t) && /\bENG\b/i.test(t))) {
         return "🇭🇺+🇬🇧 [DUAL]";
     }
 
-    // Explicit Multi-Language
     if (/\bMULTI\b/i.test(t)) {
         return "🌐 [MULTi]";
     }
 
-    // Explicit Hungarian Audio tag
     if (/\b(HUN|HUNGARIAN|MAGYAR)\b/i.test(t)) {
         return "🇭🇺 [HUN]";
     }
 
-    // Explicit English Audio tag
     if (/\b(ENG|ENGLISH)\b/i.test(t)) {
         return "🇬🇧 [ENG]";
     }
 
-    // Fallback for untagged titles (e.g. native Hungarian movies like Üvegtigris or raw scene releases)
     return "🎬 [Original / Native]";
+}
 
 function extractInfoHash(torrentBuffer) {
     try {
@@ -540,7 +536,7 @@ app.get("/", (req, res) => {
 
 const builder = new addonBuilder({
     id: "org.nuvio.ncore.torbox",
-    version: "2.4.0",
+    version: "2.4.1",
     name: "nCore + TorBox",
     description: "Stream from nCore safely routed through TorBox with language tags and cache detection",
     catalogs: [],
