@@ -33,7 +33,6 @@ function sanitizeSearchQuery(query) {
         .trim();
 }
 
-// Detect language from nCore release titles
 function detectLanguage(title) {
     if (!title) return "🇬🇧 [ENG]";
     const t = title.toUpperCase();
@@ -51,7 +50,7 @@ function detectLanguage(title) {
         return "🇬🇧 [ENG]";
     }
 
-    return "🇬🇧 [ENG]"; // Default fallback for untagged standard releases
+    return "🇬🇧 [ENG]";
 }
 
 function extractInfoHash(torrentBuffer) {
@@ -117,7 +116,60 @@ async function getNcoreSession(username, password) {
 
 async function scrapeNcore(searchQuery, searchType, sessionCookie) {
     const mode = searchType === "imdb" ? "imdb" : "name";
-    const searchUrl = `https://ncore.pro/torrents.php?miben=${mode}&mire=${encodeURIComponent(searchQuery)}&kivalasztott_tipus=osszes_fit`;  const searchRes = await axios.get(searchUrl, { headers: { "Cookie": sessionCookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } });  const $ = cheerio.load(searchRes.data); const rows = []; const seenIds = new Set();  let passkey = ""; const keyMatch = searchRes.data.match(/key=([a-zA-Z0-9]+)/i); if (keyMatch) passkey = keyMatch[1];  $(".box_torrent, .box_torrent2").each((_, row) => { const $row = $(row);  const titleEl = $row.find('.torrent_txt a, .torrent_txt2 a, a[href*="action=details"]').first(); let title = titleEl.attr('title') \vert{}\vert{} titleEl.text().trim(); if (!title) return; title = title.replace(/\[imdb:\s*[\d\.]+\]/gi, "").trim();  const href = titleEl.attr('href') \vert{}\vert{} $row.find('a[href*="action=download"]').attr('href') \vert{}\vert{} ""; const idMatch = href.match(/id=(\d+)/); if (!idMatch) return; const torrentId = idMatch[1];  if (seenIds.has(torrentId)) return; seenIds.add(torrentId);  let sizeStr = "N/A"; const sizeText = $row.find('.s_link_meret, div[class*="box_meret"]').text().trim(); if (sizeText) { sizeStr = sizeText; } else { const st = $row.text().match(/\d+(\.\d+)?\s*(B\vert{}KB\vert{}MB\vert{}GB\vert{}TB\vert{}GiB\vert{}MiB)/i); if (st) sizeStr = st[0]; }  let seeders = 0; const seedText = $row.find('.s_link_seed, div[class*="box_s"]').text().trim(); if (seedText) { seeders = parseInt(seedText, 10) \vert{}\vert{} 0; } else { const sMatch = $row.find('a[href*="peers_s"]').text(); if (sMatch) seeders = parseInt(sMatch, 10) \vert{}\vert{} 0; }  const downloadUrl = passkey ? `https://ncore.pro/torrents.php?action=download&id=${torrentId}&key=${passkey}` : `https://ncore.pro/torrents.php?action=download&id=${torrentId}`;
+    const searchUrl = `https://ncore.pro/torrents.php?miben=${mode}&mire=${encodeURIComponent(searchQuery)}&kivalasztott_tipus=osszes_fit`;
+    
+    const searchRes = await axios.get(searchUrl, {
+        headers: { 
+            "Cookie": sessionCookie,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+    });
+
+    const $ = cheerio.load(searchRes.data);
+    const rows = [];
+    const seenIds = new Set();
+
+    let passkey = "";
+    const keyMatch = searchRes.data.match(/key=([a-zA-Z0-9]+)/i);
+    if (keyMatch) passkey = keyMatch[1];
+
+    $(".box_torrent, .box_torrent2").each((_, row) => {
+        const $row = $(row);
+        
+        const titleEl = $row.find('.torrent_txt a, .torrent_txt2 a, a[href*="action=details"]').first();
+        let title = titleEl.attr('title') || titleEl.text().trim();
+        if (!title) return;
+        title = title.replace(/\[imdb:\s*[\d\.]+\]/gi, "").trim();
+
+        const href = titleEl.attr('href') || $row.find('a[href*="action=download"]').attr('href') || "";
+        const idMatch = href.match(/id=(\d+)/);
+        if (!idMatch) return;
+        const torrentId = idMatch[1];
+
+        if (seenIds.has(torrentId)) return;
+        seenIds.add(torrentId);
+
+        let sizeStr = "N/A";
+        const sizeText = $row.find('.s_link_meret, div[class*="box_meret"]').text().trim();
+        if (sizeText) {
+            sizeStr = sizeText;
+        } else {
+            const st = $row.text().match(/\d+(\.\d+)?\s*(B|KB|MB|GB|TB|GiB|MiB)/i);
+            if (st) sizeStr = st[0];
+        }
+
+        let seeders = 0;
+        const seedText = $row.find('.s_link_seed, div[class*="box_s"]').text().trim();
+        if (seedText) {
+            seeders = parseInt(seedText, 10) || 0;
+        } else {
+             const sMatch = $row.find('a[href*="peers_s"]').text();
+             if (sMatch) seeders = parseInt(sMatch, 10) || 0;
+        }
+
+        const downloadUrl = passkey 
+            ? `https://ncore.pro/torrents.php?action=download&id=${torrentId}&key=${passkey}`
+            : `https://ncore.pro/torrents.php?action=download&id=${torrentId}`;
 
         rows.push({
             id: torrentId,
@@ -155,8 +207,10 @@ function isEpisodeMatch(title, season, episode) {
     ];
 
     const seasonPackPatterns = [
-        new RegExp(`S0*${s}\\b`, 'i'), new RegExp(`\\b0*${s}\\.\\s*évad\\b`, 'i'),      
-        new RegExp(`\\b0*${s}\\.\\s*evad\\b`, 'i'), new RegExp(`\\bevad\\.\\s*0*${s}\\b`, 'i')       
+        new RegExp(`S0*${s}\\b`, 'i'),            
+        new RegExp(`\\b0*${s}\\.\\s*évad\\b`, 'i'),      
+        new RegExp(`\\b0*${s}\\.\\s*evad\\b`, 'i'),      
+        new RegExp(`\\bevad\\.\\s*0*${s}\\b`, 'i')       
     ];
 
     return epPatterns.some(p => p.test(title)) || seasonPackPatterns.some(p => p.test(title));
@@ -180,7 +234,7 @@ async function getStreamList(type, id, config, host) {
     const season = parts[1] ? parseInt(parts[1], 10) : null;
     const episode = parts[2] ? parseInt(parts[2], 10) : null;
 
-    console.log(`IMDb ID: ${imdbId}${season ? `| Season ${season} Episode ${episode}` : ''}`);
+    console.log(`IMDb ID: ${imdbId} ${season ? `| Season ${season} Episode ${episode}` : ''}`);
 
     if (!config || !config.ncore_user || !config.ncore_pass || !config.torbox_key) {
         console.log("❌ Error: Missing configuration variables.");
@@ -276,7 +330,9 @@ async function getStreamList(type, id, config, host) {
 
         if (hashList.length > 0) {
             try {
-                const cacheUrl = `https://api.torbox.app/v1/api/torrents/checkcached?hash=${hashList.join(",")}&format=object`; const cacheRes = await axios.get(cacheUrl, { headers: { "Authorization": `Bearer ${config.torbox_key}` }
+                const cacheUrl = `https://api.torbox.app/v1/api/torrents/checkcached?hash=${hashList.join(",")}&format=object`;
+                const cacheRes = await axios.get(cacheUrl, {
+                    headers: { "Authorization": `Bearer ${config.torbox_key}` }
                 });
 
                 if (cacheRes.data && cacheRes.data.data) {
@@ -295,7 +351,7 @@ async function getStreamList(type, id, config, host) {
                         });
                     }
                 }
-                console.log(`🔍 Cache Summary: ${cachedHashes.size} out of${hashList.length} releases are cached on TorBox.`);
+                console.log(`🔍 Cache Summary: ${cachedHashes.size} out of ${hashList.length} releases are cached on TorBox.`);
             } catch (cacheErr) {
                 console.log(`⚠️ Cache check error:`, cacheErr?.response?.data || cacheErr.message);
             }
@@ -315,7 +371,19 @@ async function getStreamList(type, id, config, host) {
 
             const streamObj = {
                 name: providerName,
-                title: `${statusTag}${langTag}\n${torrent.name}\n💾 ${torrent.sizeStr} | 👤 ${torrent.seeders} seeds`, url: `https://${host}/resolve-ncore/${configEncoded}/${torrent.id}/${torrent.passkey \vert{}\vert{} "none"}` };  if (isCached) { cachedStreams.push(streamObj); } else { uncachedStreams.push(streamObj); } }  const sortedStreams = [...cachedStreams, ...uncachedStreams]; console.log(`Returned ${sortedStreams.length} stream options to Nuvio.\n`);
+                title: `${statusTag} ${langTag}\n${torrent.name}\n💾 ${torrent.sizeStr} | 👤 ${torrent.seeders} seeds`,
+                url: `https://${host}/resolve-ncore/${configEncoded}/${torrent.id}/${torrent.passkey || "none"}`
+            };
+
+            if (isCached) {
+                cachedStreams.push(streamObj);
+            } else {
+                uncachedStreams.push(streamObj);
+            }
+        }
+
+        const sortedStreams = [...cachedStreams, ...uncachedStreams];
+        console.log(`Returned ${sortedStreams.length} stream options to Nuvio.\n`);
         return { streams: sortedStreams };
 
     } catch (error) {
@@ -348,14 +416,19 @@ app.get("/resolve-ncore/:config/:torrentId/:passkey", async (req, res) => {
 
         console.log(`Uploading to TorBox (${(buffer.length / 1024).toFixed(1)} KB)...`);
         const form = new FormData();
-        form.append("file", buffer, { filename: `ncore_${torrentId}.torrent`, contentType: "application/x-bittorrent" }); form.append("seed", "2");  const torboxAddRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", form, { headers: { ...form.getHeaders(), "Authorization": `Bearer ${config.torbox_key}` }
+        form.append("file", buffer, { filename: `ncore_${torrentId}.torrent`, contentType: "application/x-bittorrent" });
+        form.append("seed", "2");
+
+        const torboxAddRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", form, {
+            headers: { ...form.getHeaders(), "Authorization": `Bearer ${config.torbox_key}` }
         });
 
         if (torboxAddRes.data && torboxAddRes.data.success) {
             const torboxTorrentId = torboxAddRes.data.data.torrent_id;
 
             console.log(`Querying TorBox torrent files for torrent ID: ${torboxTorrentId}...`);
-            const mylistRes = await axios.get(`https://api.torbox.app/v1/api/torrents/mylist?id=${torboxTorrentId}`, { headers: { "Authorization": `Bearer ${config.torbox_key}` }
+            const mylistRes = await axios.get(`https://api.torbox.app/v1/api/torrents/mylist?id=${torboxTorrentId}`, {
+                headers: { "Authorization": `Bearer ${config.torbox_key}` }
             });
 
             let targetFileId = 1;
@@ -373,10 +446,11 @@ app.get("/resolve-ncore/:config/:torrentId/:passkey", async (req, res) => {
                 candidateList.sort((a, b) => b.size - a.size);
                 
                 targetFileId = candidateList[0].id;
-                console.log(`🎯 Identified main video file: "${candidateList[0].name}" (ID: ${targetFileId}, Size:${formatBytes(candidateList[0].size)})`);
+                console.log(`🎯 Identified main video file: "${candidateList[0].name}" (ID: ${targetFileId}, Size: ${formatBytes(candidateList[0].size)})`);
             }
 
-            const torboxDlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?torrent_id=${torboxTorrentId}&file_id=${targetFileId}&token=${config.torbox_key}`, { headers: { "Authorization": `Bearer ${config.torbox_key}` }
+            const torboxDlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?torrent_id=${torboxTorrentId}&file_id=${targetFileId}&token=${config.torbox_key}`, {
+                headers: { "Authorization": `Bearer ${config.torbox_key}` }
             });
 
             if (torboxDlRes.data && torboxDlRes.data.success && torboxDlRes.data.data) {
@@ -443,4 +517,52 @@ app.get("/", (req, res) => {
                     torbox_key: document.getElementById('torbox_key').value.trim()
                 };
                 const configString = encodeURIComponent(JSON.stringify(config));
-                const host =
+                const host = window.location.host;
+                const httpUrl = "https://" + host + "/" + configString + "/manifest.json";
+                const stremioUrl = "stremio://" + host + "/" + configString + "/manifest.json";
+
+                document.getElementById('manifestUrl').value = httpUrl;
+                document.getElementById('installBtn').href = stremioUrl;
+                document.getElementById('installSection').classList.remove('hidden');
+            });
+        </script>
+    </body>
+    </html>
+    `);
+});
+
+const builder = new addonBuilder({
+    id: "org.nuvio.ncore.torbox",
+    version: "2.4.0",
+    name: "nCore + TorBox",
+    description: "Stream from nCore safely routed through TorBox with language tags and cache detection",
+    catalogs: [],
+    resources: ["stream"],
+    types: ["movie", "series"],
+    idPrefixes: ["tt"],
+    behaviorHints: { configurable: true, configurationRequired: true }
+});
+
+builder.defineStreamHandler((args) => getStreamList(args.type, args.id, args.config, args.extra?.host || "127.0.0.1:7001"));
+
+const addonInterface = builder.getInterface();
+
+app.get("/manifest.json", (req, res) => res.json(addonInterface.manifest));
+app.get("/:config/manifest.json", (req, res) => res.json(addonInterface.manifest));
+
+app.get("/:config/stream/:type/:id", async (req, res) => {
+    try {
+        let parsedConfig;
+        try { parsedConfig = JSON.parse(req.params.config); } 
+        catch (e) { parsedConfig = JSON.parse(decodeURIComponent(req.params.config)); }
+        
+        const cleanId = req.params.id.replace(".json", "");
+        const response = await getStreamList(req.params.type, cleanId, parsedConfig, req.headers.host);
+        res.json(response);
+    } catch (error) {
+        console.error("Router error:", error.message);
+        res.json({ streams: [] });
+    }
+});
+
+app.listen(PORT, () => console.log(`nCore Addon active on port ${PORT}`));
