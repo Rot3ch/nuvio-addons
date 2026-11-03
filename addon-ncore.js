@@ -37,7 +37,6 @@ function detectLanguage(title, categoryLang) {
     if (!title) return categoryLang === "HUN" ? "🇭🇺 [HUN]" : "🇬🇧 [ENG]";
     const t = title.toUpperCase();
 
-    // 1. Explicit Dual or Multi tags in title
     if (/\b(DUAL|HUN\.ENG|ENG\.HUN|HUN-ENG)\b/i.test(t) || (/\bHUN\b/i.test(t) && /\bENG\b/i.test(t))) {
         return "🇭🇺+🇬🇧 [DUAL]";
     }
@@ -45,17 +44,14 @@ function detectLanguage(title, categoryLang) {
         return "🌐 [MULTi]";
     }
 
-    // 2. nCore Category or Title indicates Hungarian
     if (categoryLang === "HUN" || /\b(HUN|HUNGARIAN|MAGYAR)\b/i.test(t)) {
         return "🇭🇺 [HUN]";
     }
 
-    // 3. nCore Category or Title indicates English
     if (categoryLang === "ENG" || /\b(ENG|ENGLISH)\b/i.test(t)) {
         return "🇬🇧 [ENG]";
     }
 
-    // Default fallback based on category
     return categoryLang === "HUN" ? "🇭🇺 [HUN]" : "🇬🇧 [ENG]";
 }
 
@@ -95,6 +91,43 @@ function extractInfoHash(torrentBuffer) {
         return null;
     }
     return null;
+}
+
+// Helper to target the exact episode file inside multi-file season packs
+function findTargetFile(files, season, episode) {
+    if (!files || files.length === 0) return 1;
+
+    const videoFiles = files.filter(f => /\.(mkv|mp4|avi|mov|m2ts|ts|flv|webm)$/i.test(f.name));
+    const candidateList = videoFiles.length > 0 ? videoFiles : files;
+
+    if (season && episode && season !== 0 && episode !== 0) {
+        const s = parseInt(season, 10);
+        const e = parseInt(episode, 10);
+        const sPad = String(s).padStart(2, '0');
+        const ePad = String(e).padStart(2, '0');
+
+        const epPatterns = [
+            new RegExp(`S${sPad}E${ePad}\\b`, 'i'),
+            new RegExp(`S${s}E${e}\\b`, 'i'),
+            new RegExp(`\\b${s}x${ePad}\\b`, 'i'),
+            new RegExp(`\\b${s}x${e}\\b`, 'i'),
+            new RegExp(`\\bE(P)?${ePad}\\b.*S${sPad}`, 'i'),
+            new RegExp(`\\bE(P)?${e}\\b`, 'i')
+        ];
+
+        for (const pattern of epPatterns) {
+            const match = candidateList.find(f => pattern.test(f.name));
+            if (match) {
+                console.log(`🎯 Exact Episode Match Found: "${match.name}" (ID: ${match.id})`);
+                return match.id;
+            }
+        }
+    }
+
+    // Fallback for movies or single episode torrents: pick largest file
+    candidateList.sort((a, b) => b.size - a.size);
+    console.log(`🎯 Movie/Fallback File Selected: "${candidateList[0].name}" (ID: ${candidateList[0].id})`);
+    return candidateList[0].id;
 }
 
 async function getNcoreSession(username, password) {
@@ -143,7 +176,6 @@ async function scrapeNcore(searchQuery, searchType, sessionCookie) {
         const $row = $(row);
         const rowHtml = $row.html() || "";
         
-        // Extract nCore category from tipus= parameter in the row HTML
         let categoryLang = "";
         const tipusMatch = rowHtml.match(/tipus=([a-z0-9_]+)/i);
         if (tipusMatch) {
@@ -251,8 +283,8 @@ async function getStreamList(type, id, config, host) {
     
     const parts = id.split(':');
     const imdbId = parts[0]; 
-    const season = parts[1] ? parseInt(parts[1], 10) : null;
-    const episode = parts[2] ? parseInt(parts[2], 10) : null;
+    const season = parts[1] ? parseInt(parts[1], 10) : 0;
+    const episode = parts[2] ? parseInt(parts[2], 10) : 0;
 
     console.log(`IMDb ID: ${imdbId} ${season ? `| Season ${season} Episode ${episode}` : ''}`);
 
@@ -308,7 +340,7 @@ async function getStreamList(type, id, config, host) {
         console.log(`Total raw torrents found on nCore: ${scrapedRows.length}`);
 
         const matchingRows = scrapedRows.filter(t => {
-            if (type === "series" && season !== null && episode !== null) {
+            if (type === "series" && season !== 0 && episode !== 0) {
                 return isEpisodeMatch(t.name, season, episode);
             }
             if (type === "movie" && mediaTitle) {
@@ -389,10 +421,11 @@ async function getStreamList(type, id, config, host) {
             const providerName = isCached ? "nCore + TorBox ⚡" : "nCore + TorBox";
             const langTag = detectLanguage(torrent.name, torrent.categoryLang);
 
+            // Pass season and episode explicitly into the resolve URL
             const streamObj = {
                 name: providerName,
                 title: `${statusTag} ${langTag}\n${torrent.name}\n💾 ${torrent.sizeStr} | 👤 ${torrent.seeders} seeds`,
-                url: `https://${host}/resolve-ncore/${configEncoded}/${torrent.id}/${torrent.passkey || "none"}`
+                url: `https://${host}/resolve-ncore/${configEncoded}/${torrent.id}/${season}/${episode}/${torrent.passkey || "none"}`
             };
 
             if (isCached) {
@@ -412,18 +445,20 @@ async function getStreamList(type, id, config, host) {
     }
 }
 
-app.get("/resolve-ncore/:config/:torrentId/:passkey", async (req, res) => {
+app.get("/resolve-ncore/:config/:torrentId/:season/:episode/:passkey", async (req, res) => {
     try {
         let config = JSON.parse(decodeURIComponent(req.params.config));
         const torrentId = req.params.torrentId;
+        const season = parseInt(req.params.season, 10) || 0;
+        const episode = parseInt(req.params.episode, 10) || 0;
         const passkeyParam = req.params.passkey && req.params.passkey !== "none" ? `&key=${req.params.passkey}` : "";
 
-        console.log(`\n▶️ Stream selected! Processing nCore Torrent ID: ${torrentId}`);
+        console.log(`\n▶️ Stream selected! Processing nCore Torrent ID: ${torrentId} ${season ? `(S${season}E${episode})` : ''}`);
 
         const sessionCookie = await getNcoreSession(config.ncore_user, config.ncore_pass);
         const downloadUrl = `https://ncore.pro/torrents.php?action=download&id=${torrentId}${passkeyParam}`;
         
-        console.log(`Downloading .torrent file from nCore (Secure)...`);
+        console.log(`Downloading .torrent file from nCore...`);
         const torrentBufferRes = await axios.get(downloadUrl, { 
             responseType: 'arraybuffer',
             headers: { 
@@ -434,7 +469,6 @@ app.get("/resolve-ncore/:config/:torrentId/:passkey", async (req, res) => {
 
         const buffer = Buffer.from(torrentBufferRes.data);
 
-        console.log(`Uploading to TorBox (${(buffer.length / 1024).toFixed(1)} KB)...`);
         const form = new FormData();
         form.append("file", buffer, { filename: `ncore_${torrentId}.torrent`, contentType: "application/x-bittorrent" });
         form.append("seed", "2");
@@ -446,35 +480,24 @@ app.get("/resolve-ncore/:config/:torrentId/:passkey", async (req, res) => {
         if (torboxAddRes.data && torboxAddRes.data.success) {
             const torboxTorrentId = torboxAddRes.data.data.torrent_id;
 
-            console.log(`Querying TorBox torrent files for torrent ID: ${torboxTorrentId}...`);
             const mylistRes = await axios.get(`https://api.torbox.app/v1/api/torrents/mylist?id=${torboxTorrentId}`, {
                 headers: { "Authorization": `Bearer ${config.torbox_key}` }
             });
 
-            let targetFileId = 1;
             const torrentData = mylistRes.data?.data;
             const torrentObj = Array.isArray(torrentData) 
                 ? torrentData.find(t => t.id === torboxTorrentId) || torrentData[0] 
                 : torrentData;
 
-            if (torrentObj && Array.isArray(torrentObj.files) && torrentObj.files.length > 0) {
-                const videoFiles = torrentObj.files.filter(f => 
-                    /\.(mkv|mp4|avi|mov|m2ts|ts|flv|webm)$/i.test(f.name)
-                );
-                
-                const candidateList = videoFiles.length > 0 ? videoFiles : torrentObj.files;
-                candidateList.sort((a, b) => b.size - a.size);
-                
-                targetFileId = candidateList[0].id;
-                console.log(`🎯 Identified main video file: "${candidateList[0].name}" (ID: ${targetFileId}, Size: ${formatBytes(candidateList[0].size)})`);
-            }
+            // Find exact episode match inside the season pack
+            const targetFileId = findTargetFile(torrentObj?.files, season, episode);
 
             const torboxDlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?torrent_id=${torboxTorrentId}&file_id=${targetFileId}&token=${config.torbox_key}`, {
                 headers: { "Authorization": `Bearer ${config.torbox_key}` }
             });
 
             if (torboxDlRes.data && torboxDlRes.data.success && torboxDlRes.data.data) {
-                console.log(`✅ Direct stream link generated. Redirecting player...\n`);
+                console.log(`✅ Direct stream link generated for file ID ${targetFileId}. Redirecting player...\n`);
                 return res.redirect(302, torboxDlRes.data.data);
             }
         }
@@ -553,9 +576,9 @@ app.get("/", (req, res) => {
 
 const builder = new addonBuilder({
     id: "org.nuvio.ncore.torbox",
-    version: "2.6.0",
+    version: "2.7.0",
     name: "nCore + TorBox",
-    description: "Stream from nCore safely routed through TorBox with category-based language tags and cache detection",
+    description: "Stream from nCore safely routed through TorBox with episode file matching and cache detection",
     catalogs: [],
     resources: ["stream"],
     types: ["movie", "series"],
