@@ -34,7 +34,7 @@ function sanitizeSearchQuery(query) {
 }
 
 function detectLanguage(title, categoryLang) {
-    if (!title) return "🇬🇧 [ENG]";
+    if (!title) return categoryLang === "HUN" ? "🇭🇺 [HUN]" : "🇬🇧 [ENG]";
     const t = title.toUpperCase();
 
     // 1. Explicit Dual or Multi tags in title
@@ -55,8 +55,8 @@ function detectLanguage(title, categoryLang) {
         return "🇬🇧 [ENG]";
     }
 
-    // Default fallback
-    return "🇬🇧 [ENG]";
+    // Default fallback based on category
+    return categoryLang === "HUN" ? "🇭🇺 [HUN]" : "🇬🇧 [ENG]";
 }
 
 function extractInfoHash(torrentBuffer) {
@@ -141,17 +141,18 @@ async function scrapeNcore(searchQuery, searchType, sessionCookie) {
 
     $(".box_torrent, .box_torrent2").each((_, row) => {
         const $row = $(row);
+        const rowHtml = $row.html() || "";
         
-        // Read nCore's category tag directly from the HTML
-        const catLink = $row.find('a[href*="kivalasztott_tipus"]').first();
-        const catHref = catLink.attr('href') || "";
-        const catImgTitle = catLink.find('img').attr('title') || catLink.attr('title') || "";
-        
+        // Extract nCore category from tipus= parameter in the row HTML
         let categoryLang = "";
-        if (/hun/i.test(catHref) || /hun/i.test(catImgTitle)) {
-            categoryLang = "HUN";
-        } else if (/eng/i.test(catHref) || /eng/i.test(catImgTitle)) {
-            categoryLang = "ENG";
+        const tipusMatch = rowHtml.match(/tipus=([a-z0-9_]+)/i);
+        if (tipusMatch) {
+            const tipusVal = tipusMatch[1].toLowerCase();
+            if (tipusVal.endsWith("_hun")) {
+                categoryLang = "HUN";
+            } else {
+                categoryLang = "ENG";
+            }
         }
 
         const titleEl = $row.find('.torrent_txt a, .torrent_txt2 a, a[href*="action=details"]').first();
@@ -552,7 +553,7 @@ app.get("/", (req, res) => {
 
 const builder = new addonBuilder({
     id: "org.nuvio.ncore.torbox",
-    version: "2.5.0",
+    version: "2.6.0",
     name: "nCore + TorBox",
     description: "Stream from nCore safely routed through TorBox with category-based language tags and cache detection",
     catalogs: [],
