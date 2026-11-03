@@ -33,27 +33,30 @@ function sanitizeSearchQuery(query) {
         .trim();
 }
 
-function detectLanguage(title) {
-    if (!title) return "🎬 [Original / Native]";
+function detectLanguage(title, categoryLang) {
+    if (!title) return "🇬🇧 [ENG]";
     const t = title.toUpperCase();
 
+    // 1. Explicit Dual or Multi tags in title
     if (/\b(DUAL|HUN\.ENG|ENG\.HUN|HUN-ENG)\b/i.test(t) || (/\bHUN\b/i.test(t) && /\bENG\b/i.test(t))) {
         return "🇭🇺+🇬🇧 [DUAL]";
     }
-
     if (/\bMULTI\b/i.test(t)) {
         return "🌐 [MULTi]";
     }
 
-    if (/\b(HUN|HUNGARIAN|MAGYAR)\b/i.test(t)) {
+    // 2. nCore Category or Title indicates Hungarian
+    if (categoryLang === "HUN" || /\b(HUN|HUNGARIAN|MAGYAR)\b/i.test(t)) {
         return "🇭🇺 [HUN]";
     }
 
-    if (/\b(ENG|ENGLISH)\b/i.test(t)) {
+    // 3. nCore Category or Title indicates English
+    if (categoryLang === "ENG" || /\b(ENG|ENGLISH)\b/i.test(t)) {
         return "🇬🇧 [ENG]";
     }
 
-    return "🎬 [Original / Native]";
+    // Default fallback
+    return "🇬🇧 [ENG]";
 }
 
 function extractInfoHash(torrentBuffer) {
@@ -139,6 +142,18 @@ async function scrapeNcore(searchQuery, searchType, sessionCookie) {
     $(".box_torrent, .box_torrent2").each((_, row) => {
         const $row = $(row);
         
+        // Read nCore's category tag directly from the HTML
+        const catLink = $row.find('a[href*="kivalasztott_tipus"]').first();
+        const catHref = catLink.attr('href') || "";
+        const catImgTitle = catLink.find('img').attr('title') || catLink.attr('title') || "";
+        
+        let categoryLang = "";
+        if (/hun/i.test(catHref) || /hun/i.test(catImgTitle)) {
+            categoryLang = "HUN";
+        } else if (/eng/i.test(catHref) || /eng/i.test(catImgTitle)) {
+            categoryLang = "ENG";
+        }
+
         const titleEl = $row.find('.torrent_txt a, .torrent_txt2 a, a[href*="action=details"]').first();
         let title = titleEl.attr('title') || titleEl.text().trim();
         if (!title) return;
@@ -180,7 +195,8 @@ async function scrapeNcore(searchQuery, searchType, sessionCookie) {
             sizeStr: sizeStr,
             seeders: seeders,
             downloadUrl: downloadUrl,
-            passkey: passkey
+            passkey: passkey,
+            categoryLang: categoryLang
         });
     });
 
@@ -370,7 +386,7 @@ async function getStreamList(type, id, config, host) {
             
             const statusTag = isCached ? "⚡ [CACHED]" : "⏳ [UNCACHED]";
             const providerName = isCached ? "nCore + TorBox ⚡" : "nCore + TorBox";
-            const langTag = detectLanguage(torrent.name);
+            const langTag = detectLanguage(torrent.name, torrent.categoryLang);
 
             const streamObj = {
                 name: providerName,
@@ -536,9 +552,9 @@ app.get("/", (req, res) => {
 
 const builder = new addonBuilder({
     id: "org.nuvio.ncore.torbox",
-    version: "2.4.1",
+    version: "2.5.0",
     name: "nCore + TorBox",
-    description: "Stream from nCore safely routed through TorBox with language tags and cache detection",
+    description: "Stream from nCore safely routed through TorBox with category-based language tags and cache detection",
     catalogs: [],
     resources: ["stream"],
     types: ["movie", "series"],
