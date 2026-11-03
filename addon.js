@@ -64,10 +64,39 @@ function extractInfoHash(torrentBuffer) {
     return null;
 }
 
+// New helper function to match exact episodes or season packs
+function isEpisodeMatch(title, season, episode) {
+    if (!season || !episode) return true;
+
+    const s = season;
+    const e = episode;
+
+    const epPatterns = [
+        new RegExp(`S0*${s}E0*${e}\\b`, 'i'),          
+        new RegExp(`\\b${s}x0*${e}\\b`, 'i'),          
+        new RegExp(`\\bE(P)?0*${e}\\b.*S0*${s}`, 'i') 
+    ];
+
+    const seasonPackPatterns = [
+        new RegExp(`S0*${s}\\b`, 'i'),            
+        new RegExp(`\\b0*${s}\\.\\s*évad\\b`, 'i'),      
+        new RegExp(`\\b0*${s}\\.\\s*evad\\b`, 'i'),      
+        new RegExp(`\\bevad\\.\\s*0*${s}\\b`, 'i')       
+    ];
+
+    return epPatterns.some(p => p.test(title)) || seasonPackPatterns.some(p => p.test(title));
+}
+
 async function getStreamList(type, id, config, host) {
     console.log(`\n--- Stream List Request for ${type} ---`);
-    const imdbId = id.split(':')[0]; 
-    console.log(`IMDb ID: ${imdbId}`);
+    
+    // Extract Season and Episode from the request ID
+    const parts = id.split(':');
+    const imdbId = parts[0]; 
+    const season = parts[1] ? parseInt(parts[1], 10) : null;
+    const episode = parts[2] ? parseInt(parts[2], 10) : null;
+    
+    console.log(`IMDb ID: ${imdbId} ${season ? `| Season ${season} Episode${episode}` : ''}`);
     const streams = [];
 
     if (!config || !config.fl_username || !config.fl_passkey || !config.torbox_key) {
@@ -82,15 +111,21 @@ async function getStreamList(type, id, config, host) {
             headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
         });
 
-        const torrents = apiRes.data;
+        let torrents = apiRes.data;
 
         if (!Array.isArray(torrents) || torrents.length === 0) {
             console.log(`No torrents found on Filelist API for IMDb ID ${imdbId}.`);
             return { streams: [] };
         }
 
+        // Apply our filter to remove wrong episodes
+        if (type === "series" && season !== null && episode !== null) {
+            torrents = torrents.filter(t => isEpisodeMatch(t.name, season, episode));
+            console.log(`Filtered down to ${torrents.length} matching episode/season releases.`);
+        }
+
         const topTorrents = torrents.slice(0, 10);
-        console.log(`Found ${torrents.length} releases on Filelist. Fetching torrent headers to extract infohashes...`);
+        console.log(`Fetching torrent headers to extract infohashes for top results...`);
 
         const torrentsWithHashes = await Promise.all(
             topTorrents.map(async (t) => {
@@ -206,83 +241,4 @@ app.get("/resolve/:config/:torrentId", async (req, res) => {
         form.append("seed", "2");
 
         const torboxAddRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", form, {
-            headers: { ...form.getHeaders(), "Authorization": `Bearer ${config.torbox_key}` }
-        });
-
-        if (torboxAddRes.data && torboxAddRes.data.success) {
-            const torboxTorrentId = torboxAddRes.data.data.torrent_id;
-
-            const mylistRes = await axios.get(`https://api.torbox.app/v1/api/torrents/mylist?id=${torboxTorrentId}`, {
-                headers: { "Authorization": `Bearer ${config.torbox_key}` }
-            });
-
-            let targetFileId = 1;
-            const torrentData = mylistRes.data?.data;
-            const torrentObj = Array.isArray(torrentData) 
-                ? torrentData.find(t => t.id === torboxTorrentId) || torrentData[0] 
-                : torrentData;
-
-            if (torrentObj && Array.isArray(torrentObj.files) && torrentObj.files.length > 0) {
-                const videoFiles = torrentObj.files.filter(f => 
-                    /\.(mkv|mp4|avi|mov|m2ts|ts|flv|webm)$/i.test(f.name)
-                );
-                
-                const candidateList = videoFiles.length > 0 ? videoFiles : torrentObj.files;
-                candidateList.sort((a, b) => b.size - a.size);
-                
-                targetFileId = candidateList[0].id;
-                console.log(`🎯 Identified main video file: "${candidateList[0].name}" (ID: ${targetFileId}, Size: ${formatBytes(candidateList[0].size)})`);
-            }
-
-            const torboxDlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?torrent_id=${torboxTorrentId}&file_id=${targetFileId}&token=${config.torbox_key}`, {
-                headers: { "Authorization": `Bearer ${config.torbox_key}` }
-            });
-
-            if (torboxDlRes.data && torboxDlRes.data.success && torboxDlRes.data.data) {
-                console.log(`✅ Direct stream link generated. Redirecting player...\n`);
-                return res.redirect(302, torboxDlRes.data.data);
-            }
-        }
-
-        res.status(500).send("TorBox failed to process the torrent.");
-    } catch (err) {
-        console.error("Resolve Error:", err?.response?.data || err.message);
-        res.status(500).send("Error resolving stream.");
-    }
-});
-
-const builder = new addonBuilder({
-    id: "org.nuvio.filelist.torbox",
-    version: "2.7.1",
-    name: "Filelist + TorBox",
-    description: "Stream from Filelist safely routed through TorBox",
-    catalogs: [],
-    resources: ["stream"],
-    types: ["movie", "series"],
-    idPrefixes: ["tt"],
-    behaviorHints: { configurable: true, configurationRequired: true }
-});
-
-builder.defineStreamHandler((args) => getStreamList(args.type, args.id, args.config, "127.0.0.1:7000"));
-
-const addonInterface = builder.getInterface();
-
-app.get("/manifest.json", (req, res) => res.json(addonInterface.manifest));
-app.get("/:config/manifest.json", (req, res) => res.json(addonInterface.manifest));
-
-app.get("/:config/stream/:type/:id", async (req, res) => {
-    try {
-        let parsedConfig;
-        try { parsedConfig = JSON.parse(req.params.config); } 
-        catch (e) { parsedConfig = JSON.parse(decodeURIComponent(req.params.config)); }
-        
-        const cleanId = req.params.id.replace(".json", "");
-        const response = await getStreamList(req.params.type, cleanId, parsedConfig, req.headers.host);
-        res.json(response);
-    } catch (error) {
-        console.error("Router error:", error.message);
-        res.json({ streams: [] });
-    }
-});
-
-app.listen(PORT, () => console.log(`Web UI and Addon active on http://127.0.0.1:${PORT}`));
+            headers: {
