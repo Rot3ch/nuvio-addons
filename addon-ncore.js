@@ -34,29 +34,31 @@ function sanitizeSearchQuery(query) {
 }
 
 function detectLanguage(title) {
-    if (!title) return "🇬🇧 [ENG]";
+    if (!title) return "🎬 [Original / Native]";
     const t = title.toUpperCase();
 
-    // Explicit Dual or Multi tags
-    if (/\b(DUAL|HUN\.ENG|ENG\.HUN)\b/i.test(t) || (/\bHUN\b/i.test(t) && /\bENG\b/i.test(t))) {
+    // Explicit Dual Audio (tagged with DUAL or both HUN and ENG)
+    if (/\b(DUAL|HUN\.ENG|ENG\.HUN|HUN-ENG)\b/i.test(t) || (/\bHUN\b/i.test(t) && /\bENG\b/i.test(t))) {
         return "🇭🇺+🇬🇧 [DUAL]";
     }
+
+    // Explicit Multi-Language
     if (/\bMULTI\b/i.test(t)) {
         return "🌐 [MULTi]";
     }
 
-    // Standard Hungarian HD/WEB releases (almost always contain original English too)
-    const isHDorWEB = /\b(WEB|WEBRIP|WEB-DL|BLURAY|BDRIP|HD|1080P|720P|2160P|4K|ATMOS|DDP)\b/i.test(t);
-    if (/\b(HUN|HUNGARIAN|MAGYAR|HU)\b/i.test(t)) {
-        return isHDorWEB ? "🇭🇺+🇬🇧 [HUN + ENG]" : "🇭🇺 [HUN]";
+    // Explicit Hungarian Audio tag
+    if (/\b(HUN|HUNGARIAN|MAGYAR)\b/i.test(t)) {
+        return "🇭🇺 [HUN]";
     }
 
-    if (/\b(ENG|ENGLISH|EN)\b/i.test(t)) {
+    // Explicit English Audio tag
+    if (/\b(ENG|ENGLISH)\b/i.test(t)) {
         return "🇬🇧 [ENG]";
     }
 
-    return "🇬🇧 [ENG]";
-}
+    // Fallback for untagged titles (e.g. native Hungarian movies like Üvegtigris or raw scene releases)
+    return "🎬 [Original / Native]";
 
 function extractInfoHash(torrentBuffer) {
     try {
