@@ -237,8 +237,4 @@ app.get("/resolve/:config/:torrentId", async (req, res) => {
         const buffer = Buffer.from(torrentBufferRes.data);
 
         const form = new FormData();
-        form.append("file", buffer, { filename: `${torrentId}.torrent`, contentType: "application/x-bittorrent" });
-        form.append("seed", "2");
-
-        const torboxAddRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", form, {
-            headers: {
+        form.append("file", buffer, { filename: `${torrentId}.torrent`, contentType: "application/x-bittorrent
