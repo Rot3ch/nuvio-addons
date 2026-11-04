@@ -33,6 +33,42 @@ function sanitizeSearchQuery(query) {
         .trim();
 }
 
+// Check active TorBox torrents and delete any older than 60 hours
+async function autoCleanupOldTorrents(torboxKey) {
+    if (!torboxKey) return;
+    try {
+        const res = await axios.get("https://api.torbox.app/v1/api/torrents/mylist", {
+            headers: { "Authorization": `Bearer ${torboxKey}` }
+        });
+
+        if (res.data && res.data.success && Array.isArray(res.data.data)) {
+            const now = Date.now();
+            const MAX_AGE_MS = 60 * 60 * 60 * 1000; // 60 hours in milliseconds
+
+            for (const torrent of res.data.data) {
+                const createdAt = new Date(torrent.created_at).getTime();
+                const ageInHours = ((now - createdAt) / (1000 * 60 * 60)).toFixed(1);
+
+                if (now - createdAt >= MAX_AGE_MS) {
+                    console.log(`⏱️ Auto-Cleanup: Torrent "${torrent.name}" (ID: ${torrent.id}) is ${ageInHours}h old (>= 60h). Stopping seed...`);
+                    
+                    await axios.post("https://api.torbox.app/v1/api/torrents/controltorrent", {
+                        torrent_id: torrent.id,
+                        operation: "delete" // Removes active task to stop seeding
+                    }, {
+                        headers: { 
+                            "Authorization": `Bearer ${torboxKey}`,
+                            "Content-Type": "application/json"
+                        }
+                    });
+                }
+            }
+        }
+    } catch (err) {
+        console.error("⚠️ Cleanup check failed:", err?.response?.data || err.message);
+    }
+}
+
 function detectLanguage(title, categoryLang) {
     if (!title) return categoryLang === "HUN" ? "🇭🇺 [HUN]" : "🇬🇧 [ENG]";
     const t = title.toUpperCase();
@@ -93,7 +129,6 @@ function extractInfoHash(torrentBuffer) {
     return null;
 }
 
-// Helper to target the exact episode file inside multi-file season packs
 function findTargetFile(files, season, episode) {
     if (!files || files.length === 0) return 1;
 
@@ -124,7 +159,6 @@ function findTargetFile(files, season, episode) {
         }
     }
 
-    // Fallback for movies or single episode torrents: pick largest file
     candidateList.sort((a, b) => b.size - a.size);
     console.log(`🎯 Movie/Fallback File Selected: "${candidateList[0].name}" (ID: ${candidateList[0].id})`);
     return candidateList[0].id;
@@ -421,7 +455,6 @@ async function getStreamList(type, id, config, host) {
             const providerName = isCached ? "nCore + TorBox ⚡" : "nCore + TorBox";
             const langTag = detectLanguage(torrent.name, torrent.categoryLang);
 
-            // Pass season and episode explicitly into the resolve URL
             const streamObj = {
                 name: providerName,
                 title: `${statusTag} ${langTag}\n${torrent.name}\n💾 ${torrent.sizeStr} | 👤 ${torrent.seeders} seeds`,
@@ -454,6 +487,9 @@ app.get("/resolve-ncore/:config/:torrentId/:season/:episode/:passkey", async (re
         const passkeyParam = req.params.passkey && req.params.passkey !== "none" ? `&key=${req.params.passkey}` : "";
 
         console.log(`\n▶️ Stream selected! Processing nCore Torrent ID: ${torrentId} ${season ? `(S${season}E${episode})` : ''}`);
+
+        // Trigger background cleanup check for torrents >= 60 hours
+        autoCleanupOldTorrents(config.torbox_key).catch(() => {});
 
         const sessionCookie = await getNcoreSession(config.ncore_user, config.ncore_pass);
         const downloadUrl = `https://ncore.pro/torrents.php?action=download&id=${torrentId}${passkeyParam}`;
@@ -489,7 +525,6 @@ app.get("/resolve-ncore/:config/:torrentId/:season/:episode/:passkey", async (re
                 ? torrentData.find(t => t.id === torboxTorrentId) || torrentData[0] 
                 : torrentData;
 
-            // Find exact episode match inside the season pack
             const targetFileId = findTargetFile(torrentObj?.files, season, episode);
 
             const torboxDlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?torrent_id=${torboxTorrentId}&file_id=${targetFileId}&token=${config.torbox_key}`, {
@@ -507,6 +542,13 @@ app.get("/resolve-ncore/:config/:torrentId/:season/:episode/:passkey", async (re
         console.error("nCore Resolve Error:", err?.response?.data || err.message);
         res.status(500).send("Error resolving nCore stream.");
     }
+});
+
+// Endpoint for cron-job.org / external pings
+app.get("/cleanup/:torbox_key", async (req, res) => {
+    const torboxKey = req.params.torbox_key;
+    await autoCleanupOldTorrents(torboxKey);
+    res.send("60-hour cleanup check executed successfully.");
 });
 
 app.get("/", (req, res) => {
@@ -576,9 +618,9 @@ app.get("/", (req, res) => {
 
 const builder = new addonBuilder({
     id: "org.nuvio.ncore.torbox",
-    version: "2.7.0",
+    version: "2.8.0",
     name: "nCore + TorBox",
-    description: "Stream from nCore safely routed through TorBox with episode file matching and cache detection",
+    description: "Stream from nCore safely routed through TorBox with 60h auto-cleanup, episode file matching, and cache detection",
     catalogs: [],
     resources: ["stream"],
     types: ["movie", "series"],
