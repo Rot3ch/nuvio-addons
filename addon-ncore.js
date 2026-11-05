@@ -116,7 +116,9 @@ const getStreams = async (type, fullId, cfg, host) => {
                 url: `https://${host}/resolve-ncore/${encodeURIComponent(JSON.stringify(cfg))}/${t.id}/${s}/${e}/${t.passkey||"none"}`
             };
         });
-        return { streams: streams.sort((a, b) => b.name.includes("⚡") ? -1 : 1) };
+        
+        // Restore perfect cached vs uncached sorting
+        return { streams: [...streams.filter(s => s.name.includes("⚡")), ...streams.filter(s => !s.name.includes("⚡"))] };
     } catch (err) { return { streams: [] }; }
 };
 
@@ -143,7 +145,7 @@ app.get("/cleanup/:key", async (req, res) => { await autoCleanup(req.params.key)
 
 app.get("/", (req, res) => res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>nCore+TorBox</title><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-slate-900 text-gray-200 flex items-center justify-center min-h-screen p-4"><div class="max-w-md w-full bg-slate-800 p-6 rounded-xl shadow-2xl border border-slate-700"><h1 class="text-2xl font-bold mb-2">nCore + TorBox</h1><p class="text-slate-400 text-sm mb-6">Enter credentials for your setup link.</p><form id="f" class="space-y-4"><div><label class="block text-sm mb-1">Username</label><input type="text" id="u" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded text-white" required></div><div><label class="block text-sm mb-1">Password</label><input type="password" id="p" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded text-white" required></div><div><label class="block text-sm mb-1">TorBox API Key</label><input type="password" id="k" class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded text-white" required></div><button type="submit" class="w-full bg-blue-600 py-2 rounded font-semibold mt-4">Generate Link</button></form><div id="i" class="hidden mt-6 pt-6 border-t border-slate-700"><input type="text" id="m" readonly class="w-full text-xs p-2 bg-slate-900 border border-slate-700 text-slate-300 rounded mb-3"><a id="b" href="#" class="block w-full bg-green-600 text-white text-center font-bold py-3 rounded">Install to Stremio</a></div></div><script>document.getElementById('f').onsubmit=e=>{e.preventDefault();const c=encodeURIComponent(JSON.stringify({ncore_user:u.value.trim(),ncore_pass:p.value.trim(),torbox_key:k.value.trim()})), h=window.location.host;m.value="https://"+h+"/"+c+"/manifest.json";b.href="stremio://"+h+"/"+c+"/manifest.json";i.classList.remove('hidden');}</script></body></html>`));
 
-const builder = new addonBuilder({ id: "org.nuvio.ncore.torbox", version: "2.9.0", name: "nCore + TorBox", description: "nCore via TorBox (Optimized Core)", catalogs: [], resources: ["stream"], types: ["movie", "series"], idPrefixes: ["tt"], behaviorHints: { configurable: true, configurationRequired: true } });
+const builder = new addonBuilder({ id: "org.nuvio.ncore.torbox", version: "2.9.1", name: "nCore + TorBox", description: "nCore via TorBox (Optimized Core)", catalogs: [], resources: ["stream"], types: ["movie", "series"], idPrefixes: ["tt"], behaviorHints: { configurable: true, configurationRequired: true } });
 builder.defineStreamHandler(a => getStreams(a.type, a.id, a.config, a.extra?.host || "127.0.0.1:7001"));
 app.get(["/manifest.json", "/:config/manifest.json"], (req, res) => res.json(builder.getInterface().manifest));
 app.get("/:config/stream/:type/:id", async (req, res) => {
@@ -151,4 +153,4 @@ app.get("/:config/stream/:type/:id", async (req, res) => {
     catch (e) { res.json({ streams: [] }); }
 });
 
-app.listen(PORT, () => console.log(`nCore Addon v2.9.0 active on port ${PORT}`));
+app.listen(PORT, () => console.log(`nCore Addon v2.9.1 active on port ${PORT}`));
