@@ -1,6 +1,9 @@
 const express = require("express"), path = require("path"), crypto = require("crypto"), { addonBuilder } = require("stremio-addon-sdk"), axios = require("axios"), FormData = require("form-data"), cheerio = require("cheerio");
 const app = express(), PORT = process.env.PORT || 7001;
 
+// Trust Render's reverse proxy to ensure HTTPS requests are handled correctly
+app.set("trust proxy", true);
+
 app.use((req, res, next) => {
     res.set({ "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "GET, OPTIONS" });
     req.method === "OPTIONS" ? res.sendStatus(200) : next();
